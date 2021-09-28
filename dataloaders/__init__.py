@@ -1,15 +1,17 @@
-from dataloaders.datasets import cityscapes, coco, combine_dbs, pascal, sbd
+from dataloaders.datasets import cityscapes, coco, combine_dbs, pascal, sbd, sbd_v2
 from torch.utils.data import DataLoader
 
 def make_data_loader(args, **kwargs):
 
     if args.dataset == 'pascal':
-        train_set = pascal.VOCSegmentation(args, split='train')
-        val_set = pascal.VOCSegmentation(args, split='val')
-        if args.use_sbd:
-            sbd_train = sbd.SBDSegmentation(args, split=['train', 'val'])
-            train_set = combine_dbs.CombineDBs([train_set, sbd_train], excluded=[val_set])
+        # train_set = pascal.VOCSegmentation(args, split='train')
+        # val_set = pascal.VOCSegmentation(args, split='val')
+        # if args.use_sbd:
+        #     sbd_train = sbd.SBDSegmentation(args, split=['train', 'val'])
+        #     train_set = combine_dbs.CombineDBs([train_set, sbd_train], excluded=[val_set])
 
+        train_set = sbd_v2.SBDSegmentation(args, split=args.split)
+        val_set = sbd_v2.SBDSegmentation(args, split='val_voc')
         num_class = train_set.NUM_CLASSES
         train_loader = DataLoader(train_set, batch_size=args.batch_size, shuffle=True, **kwargs)
         val_loader = DataLoader(val_set, batch_size=args.batch_size, shuffle=False, **kwargs)

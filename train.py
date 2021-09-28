@@ -185,6 +185,9 @@ def main():
     parser.add_argument('--dataset', type=str, default='pascal',
                         choices=['pascal', 'coco', 'cityscapes'],
                         help='dataset name (default: pascal)')
+    parser.add_argument('--split', type=str, default='train_augvoc',
+                        choices=['train_augvoc', 'val_voc', 'train_gen_bsl'],
+                        help='dataset name (default: pascal)')
     parser.add_argument('--use-sbd', action='store_true', default=True,
                         help='whether to use SBD dataset (default: True)')
     parser.add_argument('--workers', type=int, default=4,
@@ -248,6 +251,7 @@ def main():
                         help='skip validation during training')
 
     args = parser.parse_args()
+    args.split = 'train_augvoc'
     args.cuda = not args.no_cuda and torch.cuda.is_available()
     if args.cuda:
         try:
@@ -287,6 +291,7 @@ def main():
 
     if args.checkname is None:
         args.checkname = 'deeplab-'+str(args.backbone)
+
     print(args)
     torch.manual_seed(args.seed)
     trainer = Trainer(args)
