@@ -16,7 +16,7 @@ class SBDSegmentation(data.Dataset):
     def __init__(self,
                  args,
                  base_dir=Path.db_root_dir('sbd'),
-                 split='train', mode = 'train'
+                 split='train', mode='train'
                  ):
         """
         :param base_dir: path to VOC dataset directory
@@ -93,6 +93,7 @@ class SBDSegmentation(data.Dataset):
             tr.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)),
             tr.ToTensor()])
         return composed_transforms(sample)
+
 
 
     def __str__(self):
