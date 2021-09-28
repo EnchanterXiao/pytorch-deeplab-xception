@@ -7,23 +7,33 @@ from mypath import Path
 from dataloaders import make_data_loader
 from modeling.sync_batchnorm.replicate import patch_replication_callback
 from modeling.deeplab import *
-from utils.loss import SegmentationLosses
-from utils.calculate_weights import calculate_weigths_labels
-from utils.lr_scheduler import LR_Scheduler
-from utils.saver import Saver
-from utils.summaries import TensorboardSummary
 from utils.metrics import Evaluator
+import scipy.misc
+from PIL import  Image
 
-class Trainer(object):
+global pallete
+def save_img(root_path, img_name, pred, img):
+    def mask2rgb(mask):
+        im = Image.formarray(mask).convert("P")
+        im.putpalette(pallete)
+        mask_rgb = np.array(im.convert("RGB"), dtype=np.float)
+        return mask_rgb / 255.
+
+    def mask_overlay(mask, image, alpha=0.3)
+        mask_rgb = mask2rgb(mask)
+        return alpha*image + (1-alpha)*mask_rgb
+    filepath = os.path.join(root_path, 'mask', img_name+'.png')
+    scipy.misc.imsave(filepath, pred.astype(np.unit8))
+
+    overlay = mask_overlay(pred, img)
+    filepath = os.path.join(root_path, 'vis', img_name+'.png')
+    overlay255 = np.round(overlay*255).astype(np.unit8)
+    scipy.misc.imsave(filepath, overlay255)
+
+
+class Evaler(object):
     def __init__(self, args):
         self.args = args
-
-        # Define Saver
-        self.saver = Saver(args)
-        self.saver.save_experiment_config()
-        # Define Tensorboard Summary
-        self.summary = TensorboardSummary(self.saver.experiment_dir)
-        self.writer = self.summary.create_summary()
         
         # Define Dataloader
         kwargs = {'num_workers': args.workers, 'pin_memory': True}
@@ -36,41 +46,16 @@ class Trainer(object):
                         sync_bn=args.sync_bn,
                         freeze_bn=args.freeze_bn)
 
-        train_params = [{'params': model.get_1x_lr_params(), 'lr': args.lr},
-                        {'params': model.get_10x_lr_params(), 'lr': args.lr * 10}]
 
-        # Define Optimizer
-        optimizer = torch.optim.SGD(train_params, momentum=args.momentum,
-                                    weight_decay=args.weight_decay, nesterov=args.nesterov)
-
-        # Define Criterion
-        # whether to use class balanced weights
-        if args.use_balanced_weights:
-            classes_weights_path = os.path.join(Path.db_root_dir(args.dataset), args.dataset+'_classes_weights.npy')
-            if os.path.isfile(classes_weights_path):
-                weight = np.load(classes_weights_path)
-            else:
-                weight = calculate_weigths_labels(args.dataset, self.train_loader, self.nclass)
-            weight = torch.from_numpy(weight.astype(np.float32))
-        else:
-            weight = None
-        self.criterion = SegmentationLosses(weight=weight, cuda=args.cuda).build_loss(mode=args.loss_type)
-        self.model, self.optimizer = model, optimizer
-        
+        self.model = model
         # Define Evaluator
         self.evaluator = Evaluator(self.nclass)
-        # Define lr scheduler
-        self.scheduler = LR_Scheduler(args.lr_scheduler, args.lr,
-                                            args.epochs, len(self.train_loader))
-
         # Using cuda
         if args.cuda:
             self.model = torch.nn.DataParallel(self.model, device_ids=self.args.gpu_ids)
             patch_replication_callback(self.model)
             self.model = self.model.cuda()
 
-        # Resuming checkpoint
-        self.best_pred = 0.0
         if args.resume is not None:
             if not os.path.isfile(args.resume):
                 raise RuntimeError("=> no checkpoint found at '{}'" .format(args.resume))
@@ -82,98 +67,32 @@ class Trainer(object):
                 self.model.load_state_dict(checkpoint['state_dict'])
             if not args.ft:
                 self.optimizer.load_state_dict(checkpoint['optimizer'])
-            self.best_pred = checkpoint['best_pred']
             print("=> loaded checkpoint '{}' (epoch {})"
                   .format(args.resume, checkpoint['epoch']))
 
-        # Clear start epoch if fine-tuning
-        if args.ft:
-            args.start_epoch = 0
-
-    def training(self, epoch):
-        train_loss = 0.0
-        self.model.train()
-        tbar = tqdm(self.train_loader)
-        num_img_tr = len(self.train_loader)
-        for i, sample, img_name in enumerate(tbar):
-            image, target = sample['image'], sample['label']
-            if self.args.cuda:
-                image, target = image.cuda(), target.cuda()
-            self.scheduler(self.optimizer, i, epoch, self.best_pred)
-            self.optimizer.zero_grad()
-            output = self.model(image)
-            loss = self.criterion(output, target)
-            loss.backward()
-            self.optimizer.step()
-            train_loss += loss.item()
-            tbar.set_description('Train loss: %.3f' % (train_loss / (i + 1)))
-            self.writer.add_scalar('train/total_loss_iter', loss.item(), i + num_img_tr * epoch)
-
-            # Show 10 * 3 inference results each epoch
-            if i % (num_img_tr // 10) == 0:
-                global_step = i + num_img_tr * epoch
-                self.summary.visualize_image(self.writer, self.args.dataset, image, target, output, global_step)
-
-        self.writer.add_scalar('train/total_loss_epoch', train_loss, epoch)
-        print('[Epoch: %d, numImages: %5d]' % (epoch, i * self.args.batch_size + image.data.shape[0]))
-        print('Loss: %.3f' % train_loss)
-
-        if self.args.no_val:
-            # save checkpoint every epoch
-            is_best = False
-            self.saver.save_checkpoint({
-                'epoch': epoch + 1,
-                'state_dict': self.model.module.state_dict(),
-                'optimizer': self.optimizer.state_dict(),
-                'best_pred': self.best_pred,
-            }, is_best)
-
-
-    def validation(self, epoch):
+    def validation(self):
         self.model.eval()
-        self.evaluator.reset()
         tbar = tqdm(self.val_loader, desc='\r')
-        test_loss = 0.0
-        for i, sample, img_name in enumerate(tbar):
+        for i, sample, img_name, orig_img in enumerate(tbar):
             image, target = sample['image'], sample['label']
             if self.args.cuda:
                 image, target = image.cuda(), target.cuda()
             with torch.no_grad():
                 output = self.model(image)
-            loss = self.criterion(output, target)
-            test_loss += loss.item()
-            tbar.set_description('Test loss: %.3f' % (test_loss / (i + 1)))
             pred = output.data.cpu().numpy()
-            target = target.cpu().numpy()
             pred = np.argmax(pred, axis=1)
-            # Add batch sample into evaluator
             self.evaluator.add_batch(target, pred)
+            orig_img = orig_img[0:, :, :, :]
+            save_img(self.root_path, img_name=img_name, pred=pred, orig_img=orig_img)
 
         # Fast test during the training
         Acc = self.evaluator.Pixel_Accuracy()
         Acc_class = self.evaluator.Pixel_Accuracy_Class()
         mIoU = self.evaluator.Mean_Intersection_over_Union()
         FWIoU = self.evaluator.Frequency_Weighted_Intersection_over_Union()
-        self.writer.add_scalar('val/total_loss_epoch', test_loss, epoch)
-        self.writer.add_scalar('val/mIoU', mIoU, epoch)
-        self.writer.add_scalar('val/Acc', Acc, epoch)
-        self.writer.add_scalar('val/Acc_class', Acc_class, epoch)
-        self.writer.add_scalar('val/fwIoU', FWIoU, epoch)
         print('Validation:')
-        print('[Epoch: %d, numImages: %5d]' % (epoch, i * self.args.batch_size + image.data.shape[0]))
         print("Acc:{}, Acc_class:{}, mIoU:{}, fwIoU: {}".format(Acc, Acc_class, mIoU, FWIoU))
-        print('Loss: %.3f' % test_loss)
 
-        new_pred = mIoU
-        if new_pred > self.best_pred:
-            is_best = True
-            self.best_pred = new_pred
-            self.saver.save_checkpoint({
-                'epoch': epoch + 1,
-                'state_dict': self.model.module.state_dict(),
-                'optimizer': self.optimizer.state_dict(),
-                'best_pred': self.best_pred,
-            }, is_best)
 
 def main():
     parser = argparse.ArgumentParser(description="PyTorch DeeplabV3Plus Training")
@@ -187,9 +106,6 @@ def main():
                         help='dataset name (default: pascal)')
     parser.add_argument('--split', type=str, default='train_augvoc',
                         choices=['train_augvoc', 'val_voc', 'train_gen_bsl'],
-                        help='dataset name (default: pascal)')
-    parser.add_argument('--mode', type=str, default='train',
-                        choices=['train', 'eval'],
                         help='dataset name (default: pascal)')
     parser.add_argument('--use-sbd', action='store_true', default=True,
                         help='whether to use SBD dataset (default: True)')
