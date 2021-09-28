@@ -16,7 +16,7 @@ class SBDSegmentation(data.Dataset):
     def __init__(self,
                  args,
                  base_dir=Path.db_root_dir('sbd'),
-                 split='train',
+                 split='train', mode = 'train'
                  ):
         """
         :param base_dir: path to VOC dataset directory
@@ -25,6 +25,7 @@ class SBDSegmentation(data.Dataset):
         """
         super().__init__()
         self._base_dir = base_dir
+        self.mode = mode
         # self._dataset_dir = os.path.join(self._base_dir, 'dataset')
         # self._image_dir = os.path.join(self._dataset_dir, 'img')
         # self._cat_dir = os.path.join(self._dataset_dir, 'cls')
@@ -42,6 +43,11 @@ class SBDSegmentation(data.Dataset):
             lines = f.read().splitlines()
         for line in lines:
             _image, _categ = line.strip("\n").split(' ')
+
+            _image = os.path.join(self._base_dir, _image)
+            assert os.path.isfile(_image), '%s not found' % _image
+            if split in ['train_augvoc', 'val_voc']:
+                _categ = os.path.join(self._base_dir, _categ.lstrip('/'))
             assert os.path.isfile(_image)
             assert os.path.isfile(_categ)
             self.im_ids.append(line)
@@ -57,15 +63,18 @@ class SBDSegmentation(data.Dataset):
     def __getitem__(self, index):
         _img, _target = self._make_img_gt_point_pair(index)
         sample = {'image': _img, 'label': _target}
-
-        return self.transform(sample)
+        if self.mode == 'train':
+            return self.transform(sample), os.path.basename(self.images[index])
+        else:
+            orig_img = _img.clone()
+            return self.transform_val(sample), os.path.basename(self.images[index]), orig_img
 
     def __len__(self):
         return len(self.images)
 
     def _make_img_gt_point_pair(self, index):
         _img = Image.open(self.images[index]).convert('RGB')
-        _target = Image.fromarray(scipy.io.loadmat(self.categories[index])["GTcls"][0]['Segmentation'][0])
+        _target = Image.open(self.categories[index])
 
         return _img, _target
 
@@ -77,6 +86,12 @@ class SBDSegmentation(data.Dataset):
             tr.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)),
             tr.ToTensor()])
 
+        return composed_transforms(sample)
+
+    def transform_eval(self, sample):
+        composed_transforms = transforms.Compose([
+            tr.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)),
+            tr.ToTensor()])
         return composed_transforms(sample)
 
 
