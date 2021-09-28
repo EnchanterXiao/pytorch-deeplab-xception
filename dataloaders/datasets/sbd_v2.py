@@ -67,7 +67,7 @@ class SBDSegmentation(data.Dataset):
             return self.transform(sample), os.path.basename(self.images[index])
         else:
             orig_img = _img.clone()
-            return self.transform_val(sample), os.path.basename(self.images[index]), orig_img
+            return self.transform_eval(sample), os.path.basename(self.images[index]), orig_img
 
     def __len__(self):
         return len(self.images)

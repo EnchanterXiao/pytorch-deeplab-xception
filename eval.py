@@ -9,19 +9,55 @@ from modeling.sync_batchnorm.replicate import patch_replication_callback
 from modeling.deeplab import *
 from utils.metrics import Evaluator
 import scipy.misc
-from PIL import  Image
+from PIL import Image, ImagePalette
 
-global pallete
-def save_img(root_path, img_name, pred, img):
+def colormap(N=256):
+    def bitget(byteval, idx):
+        return ((byteval & (1 << idx)) != 0)
+
+    dtype = 'uint8'
+    cmap = []
+    for i in range(N):
+        r = g = b = 0
+        c = i
+        for j in range(8):
+            r = r | (bitget(c, 0) << 7-j)
+            g = g | (bitget(c, 1) << 7-j)
+            b = b | (bitget(c, 2) << 7-j)
+            c = c >> 3
+
+        cmap.append((r, g, b))
+
+    return cmap
+
+def _get_voc_pallete(num_cls):
+    n = num_cls
+    pallete = [0]*(n*3)
+    for j in range(0,n):
+            lab = j
+            pallete[j*3+0] = 0
+            pallete[j*3+1] = 0
+            pallete[j*3+2] = 0
+            i = 0
+            while (lab > 0):
+                    pallete[j*3+0] |= (((lab >> 0) & 1) << (7-i))
+                    pallete[j*3+1] |= (((lab >> 1) & 1) << (7-i))
+                    pallete[j*3+2] |= (((lab >> 2) & 1) << (7-i))
+                    i = i + 1
+                    lab >>= 3
+    return pallete
+
+def save_img(root_path, img_name, pred, img, pallete):
     def mask2rgb(mask):
         im = Image.formarray(mask).convert("P")
         im.putpalette(pallete)
         mask_rgb = np.array(im.convert("RGB"), dtype=np.float)
         return mask_rgb / 255.
 
-    def mask_overlay(mask, image, alpha=0.3)
+    def mask_overlay(mask, image, alpha=0.3):
         mask_rgb = mask2rgb(mask)
         return alpha*image + (1-alpha)*mask_rgb
+
     filepath = os.path.join(root_path, 'mask', img_name+'.png')
     scipy.misc.imsave(filepath, pred.astype(np.unit8))
 
@@ -32,9 +68,9 @@ def save_img(root_path, img_name, pred, img):
 
 
 class Evaler(object):
-    def __init__(self, args):
+    def __init__(self, args, palette):
         self.args = args
-        
+        self.palette = palette
         # Define Dataloader
         kwargs = {'num_workers': args.workers, 'pin_memory': True}
         self.train_loader, self.val_loader, self.test_loader, self.nclass = make_data_loader(args, **kwargs)
@@ -83,7 +119,7 @@ class Evaler(object):
             pred = np.argmax(pred, axis=1)
             self.evaluator.add_batch(target, pred)
             orig_img = orig_img[0:, :, :, :]
-            save_img(self.root_path, img_name=img_name, pred=pred, orig_img=orig_img)
+            save_img(self.root_path, img_name=img_name, pred=pred, orig_img=orig_img, pallete=self.palette)
 
         # Fast test during the training
         Acc = self.evaluator.Pixel_Accuracy()
@@ -212,8 +248,12 @@ def main():
         args.checkname = 'deeplab-'+str(args.backbone)
 
     print(args)
+    cmap = colormap()
+    palette = ImagePalette.ImagePalette()
+    for rgb in cmap:
+        palette.getcolor(rgb)
     torch.manual_seed(args.seed)
-    trainer = Trainer(args)
+    trainer = Evaler(args, palette)
     print('Starting Epoch:', trainer.args.start_epoch)
     print('Total Epoches:', trainer.args.epochs)
     for epoch in range(trainer.args.start_epoch, trainer.args.epochs):
