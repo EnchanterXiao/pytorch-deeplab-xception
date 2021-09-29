@@ -66,7 +66,7 @@ class SBDSegmentation(data.Dataset):
         if self.mode == 'train':
             return self.transform(sample), os.path.basename(self.images[index])
         else:
-            orig_img = _img.clone()
+            orig_img = _img.copy()
             return self.transform_eval(sample), os.path.basename(self.images[index]), orig_img
 
     def __len__(self):
