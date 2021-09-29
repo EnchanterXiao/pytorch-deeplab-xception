@@ -95,7 +95,7 @@ class Trainer(object):
         self.model.train()
         tbar = tqdm(self.train_loader)
         num_img_tr = len(self.train_loader)
-        for i, sample, img_name in enumerate(tbar):
+        for i, (sample, img_name) in enumerate(tbar):
             image, target = sample['image'], sample['label']
             if self.args.cuda:
                 image, target = image.cuda(), target.cuda()
@@ -134,7 +134,7 @@ class Trainer(object):
         self.evaluator.reset()
         tbar = tqdm(self.val_loader, desc='\r')
         test_loss = 0.0
-        for i, sample, img_name in enumerate(tbar):
+        for i, (sample, img_name) in enumerate(tbar):
             image, target = sample['image'], sample['label']
             if self.args.cuda:
                 image, target = image.cuda(), target.cuda()
@@ -254,7 +254,7 @@ def main():
                         help='skip validation during training')
 
     args = parser.parse_args()
-    args.split = 'train_augvoc'
+    args.split = 'train_gen_bsl'
     args.cuda = not args.no_cuda and torch.cuda.is_available()
     if args.cuda:
         try:
