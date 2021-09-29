@@ -11,6 +11,21 @@ from utils.metrics import Evaluator
 import scipy.misc
 from PIL import Image, ImagePalette
 
+
+def denorm(image):
+    means = (0.485, 0.456, 0.406)
+    std = (0.229, 0.224, 0.225)
+    if image.dim() == 3:
+        assert image.dim() == 3, "Expected image [C*H*W]"
+        assert image.size(0) == 3, "Expected RGB image [3*H*W]"
+        for t, m, s in zip(image, means, std):
+            t.mul_(s).add_(m)
+    elif image.dim() == 4:
+        assert image.size(1) == 3, "Expected RGB image [3*h*w]"
+        for t, m, s in zip((0, 1, 2), means, std):
+            image[:, t, :, :].mul_(s).add_(m)
+    return image
+
 def colormap(N=256):
     def bitget(byteval, idx):
         return ((byteval & (1 << idx)) != 0)
@@ -49,21 +64,23 @@ def _get_voc_pallete(num_cls):
 
 def save_img(root_path, img_name, pred, img, pallete):
     def mask2rgb(mask):
-        im = Image.formarray(mask).convert("P")
+        # print(mask.shape)
+        im = Image.fromarray(np.uint8(mask)).convert("P")
         im.putpalette(pallete)
         mask_rgb = np.array(im.convert("RGB"), dtype=np.float)
         return mask_rgb / 255.
 
     def mask_overlay(mask, image, alpha=0.3):
         mask_rgb = mask2rgb(mask)
+        image = np.transpose(image, (1, 2, 0))
         return alpha*image + (1-alpha)*mask_rgb
 
     filepath = os.path.join(root_path, 'mask', img_name+'.png')
-    scipy.misc.imsave(filepath, pred.astype(np.unit8))
+    scipy.misc.imsave(filepath, pred.astype(np.uint8))
 
     overlay = mask_overlay(pred, img)
     filepath = os.path.join(root_path, 'vis', img_name+'.png')
-    overlay255 = np.round(overlay*255).astype(np.unit8)
+    overlay255 = np.round(overlay*255).astype(np.uint8)
     scipy.misc.imsave(filepath, overlay255)
 
 
@@ -115,7 +132,7 @@ class Evaler(object):
     def validation(self):
         self.model.eval()
         tbar = tqdm(self.val_loader, desc='\r')
-        for i, sample, img_name in enumerate(tbar):
+        for i, (sample, img_name) in enumerate(tbar):
             image, target = sample['image'], sample['label']
             if self.args.cuda:
                 image, target = image.cuda(), target.cuda()
@@ -123,9 +140,13 @@ class Evaler(object):
                 output = self.model(image)
             pred = output.data.cpu().numpy()
             pred = np.argmax(pred, axis=1)
+            # print(pred.shape)
+            target = target.cpu().numpy()
             self.evaluator.add_batch(target, pred)
-            orig_img = self.val_loader.denorm(orig_img[0:, :, :, :]).numpy()
-            save_img(self.root_path, img_name=img_name, pred=pred, orig_img=orig_img, pallete=self.palette)
+            pred = pred[0, :, :]
+            orig_img = denorm(image[0, :, :, :]).cpu().numpy()
+            # print(img_name)
+            save_img(self.root_path, img_name=img_name[0], pred=pred, img=orig_img, pallete=self.palette)
 
         # Fast test during the training
         Acc = self.evaluator.Pixel_Accuracy()
