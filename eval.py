@@ -109,8 +109,6 @@ class Evaler(object):
                 self.model.module.load_state_dict(checkpoint['state_dict'])
             else:
                 self.model.load_state_dict(checkpoint['state_dict'])
-            if not args.ft:
-                self.optimizer.load_state_dict(checkpoint['optimizer'])
             print("=> loaded checkpoint '{}' (epoch {})"
                   .format(args.resume, checkpoint['epoch']))
 
