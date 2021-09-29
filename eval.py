@@ -115,7 +115,7 @@ class Evaler(object):
     def validation(self):
         self.model.eval()
         tbar = tqdm(self.val_loader, desc='\r')
-        for i, sample, img_name, orig_img in enumerate(tbar):
+        for i, sample, img_name in enumerate(tbar):
             image, target = sample['image'], sample['label']
             if self.args.cuda:
                 image, target = image.cuda(), target.cuda()
@@ -124,7 +124,7 @@ class Evaler(object):
             pred = output.data.cpu().numpy()
             pred = np.argmax(pred, axis=1)
             self.evaluator.add_batch(target, pred)
-            orig_img = orig_img[0:, :, :, :]
+            orig_img = self.val_loader.denorm(orig_img[0:, :, :, :]).numpy()
             save_img(self.root_path, img_name=img_name, pred=pred, orig_img=orig_img, pallete=self.palette)
 
         # Fast test during the training

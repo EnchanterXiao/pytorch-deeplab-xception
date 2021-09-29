@@ -66,8 +66,7 @@ class SBDSegmentation(data.Dataset):
         if self.mode == 'train':
             return self.transform(sample), os.path.basename(self.images[index])
         else:
-            orig_img = _img.copy()
-            return self.transform_eval(sample), os.path.basename(self.images[index]), orig_img
+            return self.transform_eval(sample), os.path.basename(self.images[index])
 
     def __len__(self):
         return len(self.images)
@@ -93,6 +92,20 @@ class SBDSegmentation(data.Dataset):
             tr.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)),
             tr.ToTensor()])
         return composed_transforms(sample)
+
+    def denorm(self, image):
+        means = (0.485, 0.456, 0.406)
+        std = (0.229, 0.224, 0.225)
+        if image.dim() == 3:
+            assert image.dim() == 3, "Expected image [C*H*W]"
+            assert image.size(0) == 3, "Expected RGB image [3*H*W]"
+            for t,m,s in zip(image,means, std):
+                t.mul_(s).add_(m)
+        elif image.dim() == 4:
+            assert image.size(1) == 3, "Expected RGB image [3*h*w]"
+            for t,m,s in zip((0,1,2), means, std):
+                image[:, t, :,:].mul_(s).add_(m)
+        return image
 
 
 
