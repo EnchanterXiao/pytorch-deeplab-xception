@@ -254,7 +254,7 @@ def main():
                         help='skip validation during training')
 
     args = parser.parse_args()
-    args.split = 'train_gen_bsl'
+    # args.split = 'train_gen_bsl'
     args.cuda = not args.no_cuda and torch.cuda.is_available()
     if args.cuda:
         try:
