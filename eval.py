@@ -75,8 +75,8 @@ def save_img(root_path, img_name, pred, img, pallete):
         image = np.transpose(image, (1, 2, 0))
         return alpha*image + (1-alpha)*mask_rgb
 
-    filepath = os.path.join(root_path, 'mask', img_name+'.png')
-    scipy.misc.imsave(filepath, pred.astype(np.uint8))
+    # filepath = os.path.join(root_path, 'mask', img_name+'.png')
+    # scipy.misc.imsave(filepath, pred.astype(np.uint8))
 
     overlay = mask_overlay(pred, img)
     filepath = os.path.join(root_path, 'vis', img_name+'.png')
@@ -93,8 +93,8 @@ class Evaler(object):
             os.mkdir(self.root_path)
         if not os.path.exists(os.path.join(self.root_path, 'vis')):
             os.mkdir(os.path.join(self.root_path, 'vis'))
-        if not os.path.exists(os.path.join(self.root_path, 'mask')):
-            os.mkdir(os.path.join(self.root_path, 'mask'))
+        # if not os.path.exists(os.path.join(self.root_path, 'mask')):
+        #     os.mkdir(os.path.join(self.root_path, 'mask'))
 
         # Define Dataloader
         kwargs = {'num_workers': args.workers, 'pin_memory': True}
