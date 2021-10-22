@@ -186,7 +186,7 @@ def main():
                         choices=['pascal', 'coco', 'cityscapes'],
                         help='dataset name (default: pascal)')
     parser.add_argument('--split', type=str, default='train_augvoc',
-                        choices=['train_augvoc', 'val_voc', 'train_gen_bsl'],
+                        choices=['train_augvoc', 'val_voc', 'train_gen_bsl', 'train_gen_v5'],
                         help='dataset name (default: pascal)')
     parser.add_argument('--mode', type=str, default='train',
                         choices=['train', 'eval'],
