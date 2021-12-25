@@ -4,8 +4,8 @@ import os
 '''
 
 read_file = '../1sw/data/train_augvoc.txt'
-save_file = '../1sw/data/train_gen_v5.txt'
-mask_path = '/home/lwq/sdb1/xiaoxin/WSSS/1sw/output/pascal_voc/v1013/cam_casa_wgap_v5/train_augvoc_1/no_crf'
+save_file = '../1sw/data/train_gen_v14_3.txt'
+mask_path = '/home/lhw/sdb/xx/WSSS/1sw/output/IRN/sem_seg/v1209/CAM_CASA_WGAP_tf_v14_3_ws3'
 result = []
 img_gt_name_list = open(read_file).read().splitlines()
 with open(save_file, 'w') as f:

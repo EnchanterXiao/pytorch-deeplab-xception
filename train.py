@@ -7,6 +7,7 @@ from mypath import Path
 from dataloaders import make_data_loader
 from modeling.sync_batchnorm.replicate import patch_replication_callback
 from modeling.deeplab import *
+from modeling.deeplabv2 import *
 from utils.loss import SegmentationLosses
 from utils.calculate_weights import calculate_weigths_labels
 from utils.lr_scheduler import LR_Scheduler
@@ -30,11 +31,13 @@ class Trainer(object):
         self.train_loader, self.val_loader, self.test_loader, self.nclass = make_data_loader(args, **kwargs)
 
         # Define network
-        model = DeepLab(num_classes=self.nclass,
-                        backbone=args.backbone,
-                        output_stride=args.out_stride,
-                        sync_bn=args.sync_bn,
-                        freeze_bn=args.freeze_bn)
+        # model = DeepLab(num_classes=self.nclass,
+        #                 backbone=args.backbone,
+        #                 output_stride=args.out_stride,
+        #                 sync_bn=args.sync_bn,
+        #                 freeze_bn=args.freeze_bn)
+
+        model = resnet101(n_class=self.nclass, pretrained=True)
 
         train_params = [{'params': model.get_1x_lr_params(), 'lr': args.lr},
                         {'params': model.get_10x_lr_params(), 'lr': args.lr * 10}]
@@ -176,6 +179,7 @@ class Trainer(object):
             }, is_best)
 
 def main():
+
     parser = argparse.ArgumentParser(description="PyTorch DeeplabV3Plus Training")
     parser.add_argument('--backbone', type=str, default='resnet',
                         choices=['resnet', 'xception', 'drn', 'mobilenet'],
@@ -186,7 +190,8 @@ def main():
                         choices=['pascal', 'coco', 'cityscapes'],
                         help='dataset name (default: pascal)')
     parser.add_argument('--split', type=str, default='train_augvoc',
-                        choices=['train_augvoc', 'val_voc', 'train_gen_bsl', 'train_gen_v5'],
+                        choices=['train_augvoc', 'val_voc', 'train_gen_bsl', 'train_gen_v5',
+                                 'train_gen_v14_3'],
                         help='dataset name (default: pascal)')
     parser.add_argument('--mode', type=str, default='train',
                         choices=['train', 'eval'],

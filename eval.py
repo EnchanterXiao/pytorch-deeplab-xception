@@ -10,6 +10,8 @@ from modeling.deeplab import *
 from utils.metrics import Evaluator
 import scipy.misc
 from PIL import Image, ImagePalette
+from utils.DenseCRF import DenseCRF
+import joblib
 
 
 def denorm(image):
@@ -77,6 +79,8 @@ def save_img(root_path, img_name, pred, img, pallete):
 
     # filepath = os.path.join(root_path, 'mask', img_name+'.png')
     # scipy.misc.imsave(filepath, pred.astype(np.uint8))
+    filepath = os.path.join(root_path, "mask", img_name + '.png')
+    scipy.misc.imsave(filepath, pred.astype(np.uint8))
 
     overlay = mask_overlay(pred, img)
     filepath = os.path.join(root_path, 'vis', img_name+'.png')
@@ -91,10 +95,31 @@ class Evaler(object):
         self.root_path = args.save_dir
         if not os.path.exists(self.root_path):
             os.mkdir(self.root_path)
-        if not os.path.exists(os.path.join(self.root_path, 'vis')):
-            os.mkdir(os.path.join(self.root_path, 'vis'))
-        # if not os.path.exists(os.path.join(self.root_path, 'mask')):
-        #     os.mkdir(os.path.join(self.root_path, 'mask'))
+        if not os.path.exists(os.path.join(self.root_path, 'val', 'vis')):
+            os.makedirs(os.path.join(self.root_path, 'val', 'vis'))
+        if not os.path.exists(os.path.join(self.root_path, 'val', 'mask')):
+            os.makedirs(os.path.join(self.root_path, 'val', 'mask'))
+        if not os.path.exists(os.path.join(self.root_path, 'test', 'vis')):
+            os.makedirs(os.path.join(self.root_path, 'test', 'vis'))
+        if not os.path.exists(os.path.join(self.root_path, 'test', 'mask')):
+            os.makedirs(os.path.join(self.root_path, 'test', 'mask'))
+
+        if args.crf:
+            ITER_MAX = 10
+            POS_W = 3
+            POS_XY_STD = 1  # 3
+            BI_W = 4  # 10
+            BI_XY_STD = 67  # 80
+            BI_RGB_STD = 3  # 13
+
+            self.postprocessor = DenseCRF(
+                iter_max=ITER_MAX,
+                pos_xy_std=POS_XY_STD,
+                pos_w=POS_W,
+                bi_xy_std=BI_XY_STD,
+                bi_rgb_std=BI_RGB_STD,
+                bi_w=BI_W,
+            )
 
         # Define Dataloader
         kwargs = {'num_workers': args.workers, 'pin_memory': True}
@@ -138,15 +163,29 @@ class Evaler(object):
                 image, target = image.cuda(), target.cuda()
             with torch.no_grad():
                 output = self.model(image)
-            pred = output.data.cpu().numpy()
+            pred = F.softmax(output, 1)
+            pred = pred.data.cpu().numpy()
+            # orig_img = denorm(image[0, :, :, :]).cpu().numpy()
+            orig_img = denorm(image).cpu().numpy()
+
+            # Post Processing
+            if self.args.crf:
+                images = orig_img.transpose(0, 2, 3, 1)
+                images = np.round(255. * images).astype(np.uint8)
+                pred = joblib.Parallel(n_jobs=-1)(
+                    [joblib.delayed(self.postprocessor)(*pair) for pair in zip(images, pred)]
+                )
+
             pred = np.argmax(pred, axis=1)
-            # print(pred.shape)
+            # print(np.unique(pred))
+
             target = target.cpu().numpy()
             self.evaluator.add_batch(target, pred)
             pred = pred[0, :, :]
-            orig_img = denorm(image[0, :, :, :]).cpu().numpy()
+
             # print(img_name)
-            save_img(self.root_path, img_name=img_name[0], pred=pred, img=orig_img, pallete=self.palette)
+            orig_img = orig_img[0, :, :, :]
+            save_img(os.path.join(self.root_path, 'val'), img_name=img_name[0].split('.')[0], pred=pred, img=orig_img, pallete=self.palette)
 
         # Fast test during the training
         Acc = self.evaluator.Pixel_Accuracy()
@@ -156,6 +195,31 @@ class Evaler(object):
         print('Validation:')
         print("Acc:{}, Acc_class:{}, mIoU:{}, fwIoU: {}".format(Acc, Acc_class, mIoU, FWIoU))
 
+    def validation_test(self):
+        self.model.eval()
+        tbar = tqdm(self.test_loader, desc='\r')
+        for i, (sample, img_name) in enumerate(tbar):
+            image, target = sample['image'], sample['label']
+            if self.args.cuda:
+                image, target = image.cuda(), target.cuda()
+            with torch.no_grad():
+                output = self.model(image)
+            # pred = output.data.cpu().numpy()
+
+            pred = F.softmax(output, 1)
+            pred = pred.data.cpu().numpy()
+            orig_img = denorm(image).cpu().numpy()
+            if self.args.crf:
+                images = orig_img.transpose(0, 2, 3, 1)
+                images = np.round(255. * images).astype(np.uint8)
+                pred = joblib.Parallel(n_jobs=-1)(
+                    [joblib.delayed(self.postprocessor)(*pair) for pair in zip(images, pred)]
+                )
+            pred = np.argmax(pred, axis=1)
+            pred = pred[0, :, :]
+            # orig_img = denorm(image[0, :, :, :]).cpu().numpy()
+            orig_img = orig_img[0, :, :, :]
+            save_img(os.path.join(self.root_path, 'test'), img_name=img_name[0].split('.')[0], pred=pred, img=orig_img, pallete=self.palette)
 
 def main():
     parser = argparse.ArgumentParser(description="PyTorch DeeplabV3Plus Training")
@@ -164,6 +228,8 @@ def main():
                         help='backbone name (default: resnet)')
     parser.add_argument('--mode', type=str, default='train',
                         choices=['train', 'eval'],)
+    parser.add_argument('--crf', type=bool, default=False,
+                        help='use crf', )
     parser.add_argument('--out-stride', type=int, default=16,
                         help='network output stride (default: 8)')
     parser.add_argument('--dataset', type=str, default='pascal',
@@ -224,6 +290,7 @@ def main():
     torch.manual_seed(args.seed)
     trainer = Evaler(args, palette)
     trainer.validation()
+    # trainer.validation_test()
 
 if __name__ == "__main__":
    main()
